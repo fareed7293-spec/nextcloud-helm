@@ -1,0 +1,72 @@
+{{- if .Values.dbBackup.enabled }}
+{{- if not .Values.dbBackup.existingClaim }}
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: {{ .Release.Name }}-mariadb-backup
+  namespace: {{ .Release.Namespace }}
+  labels:
+    app.kubernetes.io/name: {{ .Chart.Name }}
+    app.kubernetes.io/instance: {{ .Release.Name }}
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: {{ .Values.dbBackup.storageClass | quote }}
+  resources:
+    requests:
+      storage: {{ .Values.dbBackup.size | default "10Gi" }}
+---
+{{- end }}
+apiVersion: batch/v1
+kind: CronJob
+metadata:
+  name: {{ .Release.Name }}-mariadb-backup
+  namespace: {{ .Release.Namespace }}
+spec:
+  schedule: {{ .Values.dbBackup.schedule | quote }}
+  successfulJobsHistoryLimit: 3
+  failedJobsHistoryLimit: 3
+  concurrencyPolicy: Forbid
+  jobTemplate:
+    spec:
+      template:
+        spec:
+          restartPolicy: OnFailure  # <-- THIS LINE IS REQUIRED
+          containers:
+            - name: mariadb-dumper
+              image: mariadb:10.11
+              env:
+                - name: MYSQL_HOST
+                  value: "nextcloud-mariadb"
+                - name: MYSQL_ROOT_PASSWORD
+                  valueFrom:
+                    secretKeyRef:
+                      name: nextcloud-secrets
+                      key: MYSQL_ROOT_PASSWORD
+              command:
+                - /bin/sh
+                - -c
+                - |
+                  set -e
+                  DATE=$(date +%F_%H%M%S)
+                  TARGET_DIR="/backup-dir/db_dumps"
+                  mkdir -p "$TARGET_DIR"
+                  TARGET_FILE="${TARGET_DIR}/nextcloud_db_${DATE}.sql.gz"
+
+                  echo "[*] Exporting MariaDB dump to Alpine NFS..."
+                  mysqldump -h "$MYSQL_HOST" -u root -p"$MYSQL_ROOT_PASSWORD" \
+                    --single-transaction --routines --triggers nextcloud | gzip > "$TARGET_FILE"
+                  
+                  echo "[*] Successfully saved: $TARGET_FILE"
+
+                  echo "[*] Cleaning up dumps older than 30 days..."
+                  find "$TARGET_DIR" -name "nextcloud_db_*.sql.gz" -type f -mtime +30 -delete
+                  echo "[✓] Complete."
+              volumeMounts:
+                - name: backup-storage
+                  mountPath: /backup-dir
+          volumes:
+            - name: backup-storage
+              persistentVolumeClaim:
+                claimName: nextcloud-mariadb-backup
+{{- end }}

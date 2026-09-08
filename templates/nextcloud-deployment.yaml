@@ -1,0 +1,72 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{ .Release.Name }}
+  template:
+    metadata:
+      annotations:
+        {{- toYaml .Values.podAnnotations | nindent 8 }}
+      labels:
+        app: {{ .Release.Name }}
+        {{- toYaml .Values.podLabels | nindent 8 }}
+    spec:
+      containers:
+        - name: nextcloud
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          env:
+            - name: NEXTCLOUD_UPDATE
+              value: "0"
+            - name: MYSQL_HOST
+              value: "{{ .Release.Name }}-mariadb:3306"
+            - name: MYSQL_DATABASE
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: MYSQL_DATABASE
+            - name: MYSQL_USER
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: MYSQL_USER
+            - name: MYSQL_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: {{ .Release.Name }}-secrets
+                  key: MYSQL_PASSWORD
+            - name: NEXTCLOUD_TRUSTED_DOMAINS
+              value: {{ .Values.host | quote }}
+            - name: REDIS_HOST
+              value: "{{ .Release.Name }}-redis.{{ .Release.Namespace }}.svc.cluster.local"
+            - name: REDIS_HOST_PORT
+              value: "6379"
+            {{- if .Values.extraEnv }}
+            {{- toYaml .Values.extraEnv | nindent 12 }}
+            {{- end }}
+          ports:
+            - containerPort: 9000
+              name: fpm
+          volumeMounts:
+            - name: nextcloud-storage
+              mountPath: /var/www/html
+            {{- if .Values.extraVolumeMounts }}
+            {{- toYaml .Values.extraVolumeMounts | nindent 12 }}
+            {{- end }}
+
+        {{- if .Values.sidecars }}
+        {{- toYaml .Values.sidecars | nindent 8 }}
+        {{- end }}
+
+      volumes:
+        - name: nextcloud-storage
+          persistentVolumeClaim:
+            claimName: {{ .Release.Name }}-data-pvc
+        {{- if .Values.extraVolumes }}
+        {{- toYaml .Values.extraVolumes | nindent 8 }}
+        {{- end }}
