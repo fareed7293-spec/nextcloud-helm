@@ -2,6 +2,16 @@ image:
   repository: nextcloud
   tag: "33.0.8-fpm"
   pullPolicy: IfNotPresent
+  flavor: "fpm"
+
+nginx:
+  enabled: true
+  image:
+    repository: nginx
+    tag: "alpine"
+    pullPolicy: IfNotPresent
+  config:
+    default: true
 
 host: "nextcloud.fareed.in"
 
@@ -13,62 +23,9 @@ storage:
     className: "nfs-fast-retain"
     size: 5Gi
 
-podAnnotations:
-  admission.datadoghq.com/enabled: "true"
-  admission.datadoghq.com/php-lib.version: "latest"
-  ad.datadoghq.com/nextcloud.logs: '[{"source": "php", "service": "nextcloud"}]'
-
-podLabels:
-  tags.datadoghq.com/env: "prod"
-  tags.datadoghq.com/service: "nextcloud"
-  tags.datadoghq.com/version: "33.0.8"
-  admission.datadoghq.com/enabled: "true"
-
-extraEnv:
-  - name: DD_ENV
-    value: "prod"
-  - name: DD_SERVICE
-    value: "nextcloud"
-  - name: DD_VERSION
-    value: "33.0.8"
-  - name: DD_LOGS_INJECTION
-    value: "true"
-  - name: DD_TRACE_DEBUG
-    value: "false"
-  - name: DD_TRACE_AGENT_URL
-    value: "unix:///var/run/datadog/apm.socket"
-
-# Host socket mount for APM traces
-extraVolumes:
-  - name: datadog-agent-socket
-    hostPath:
-      path: /var/run/datadog
-      type: DirectoryOrCreate
-  - name: nginx-config
-    configMap:
-      name: nextcloud-nginx-config
-
-extraVolumeMounts:
-  - name: datadog-agent-socket
-    mountPath: /var/run/datadog
-    readOnly: true
-
-sidecars:
-  - name: nginx
-    image: nginx:alpine
-    securityContext:
-      runAsUser: 33
-      runAsGroup: 33
-    ports:
-      - containerPort: 80
-        name: http
-    volumeMounts:
-      - name: nginx-config
-        mountPath: /etc/nginx/conf.d/default.conf
-        subPath: default.conf
-      - name: nextcloud-storage
-        mountPath: /var/www/html
-        readOnly: true
+extraEnv: []
+extraVolumes: []
+extraVolumeMounts: []
 
 mariadb:
   image:
@@ -76,11 +33,17 @@ mariadb:
     tag: "12.3"
   database: "nextcloud"
   user: "nextcloud"
+  auth:
+    password: "changeme_nextcloud_db_password"
+    rootPassword: "changeme_mariadb_root_password"
 
 redis:
   image:
     repository: redis
     tag: "8.10.0-alpine3.23"
+  auth:
+    enabled: true
+    password: "changeme_redis_password"
 
 secrets:
   mysqlRootPassword: "changeme_mariadb_root_password"

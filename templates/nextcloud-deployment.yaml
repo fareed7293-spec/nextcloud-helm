@@ -10,12 +10,16 @@ spec:
       app: {{ .Release.Name }}
   template:
     metadata:
-      annotations:
-        {{- toYaml .Values.podAnnotations | nindent 8 }}
       labels:
         app: {{ .Release.Name }}
+        admission.datadoghq.com/enabled: "false"
+        {{- if .Values.podLabels }}
         {{- toYaml .Values.podLabels | nindent 8 }}
+        {{- end }}
     spec:
+      securityContext:
+        fsGroup: 33
+        fsGroupChangePolicy: "OnRootMismatch"
       containers:
         - name: nextcloud
           image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
@@ -59,14 +63,31 @@ spec:
             {{- toYaml .Values.extraVolumeMounts | nindent 12 }}
             {{- end }}
 
-        {{- if .Values.sidecars }}
-        {{- toYaml .Values.sidecars | nindent 8 }}
+        {{- if .Values.nginx.enabled }}
+        - name: nginx
+          image: "{{ .Values.nginx.image.repository }}:{{ .Values.nginx.image.tag }}"
+          imagePullPolicy: {{ .Values.nginx.image.pullPolicy }}
+          ports:
+            - containerPort: 80
+              name: http
+          volumeMounts:
+            - name: nextcloud-storage
+              mountPath: /var/www/html
+              readOnly: true
+            - name: nginx-config
+              mountPath: /etc/nginx/conf.d/default.conf
+              subPath: default.conf
         {{- end }}
 
       volumes:
         - name: nextcloud-storage
           persistentVolumeClaim:
             claimName: {{ .Release.Name }}-data-pvc
+        {{- if .Values.nginx.enabled }}
+        - name: nginx-config
+          configMap:
+            name: {{ .Release.Name }}-nginx-config
+        {{- end }}
         {{- if .Values.extraVolumes }}
         {{- toYaml .Values.extraVolumes | nindent 8 }}
         {{- end }}
